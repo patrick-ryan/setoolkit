@@ -1,0 +1,6 @@
+.vscode
+bin/
+build/
+__pycache__/
+*.egg-info/
+.python-version

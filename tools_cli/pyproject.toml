@@ -1,0 +1,44 @@
+[project]
+name = "tools"
+version = "0.1"
+description = "Tools"
+
+requires-python = ">= 3.11"
+dependencies = [
+    "GitPython~=3.1.43",
+    "rich~=13.7.1",
+    "click~=8.1.7",
+    "boto3~=1.35.95",
+    "pandas~=2.2.3",
+    # sd
+    "pyyaml~=6.0.2",
+    "jsonpath-ng==1.7.0",
+    "pyspark~=3.5.5",
+    # qs
+    "thefuzz~=0.22.1",
+]
+
+[project.optional-dependencies]
+build = [
+    "cx_Freeze~=7.1.1",
+    "ipython~=8.26.0",
+]
+
+[tool.cxfreeze]
+executables = [
+    {script = "src/gst.py", base = "console", target_name = ",gst"},
+    {script = "src/rt.py", base = "console", target_name = ",print_rt"},
+    {script = "src/gcs.py", base = "console", target_name = ",gcs"},
+    {script = "src/s3u2u.py", base = "console", target_name = ",s3u2u"},
+    {script = "src/qs.py", base = "console", target_name = ",print_qs"},
+]
+
+[tool.cxfreeze.build_exe]
+include_path = "src"
+excludes = ["tkinter", "unittest", "IPython", "cx_Freeze"]
+
+[tool.cxfreeze.install_exe]
+install_dir = "~/.tools/bin"
+
+[build-system]
+requires = ["setuptools"]
