@@ -1,7 +1,7 @@
 [project]
-name = "tools"
+name = "setoolkit-cli"
 version = "0.1"
-description = "Tools"
+description = "Command-line tools for engineering workflows"
 
 requires-python = ">= 3.11"
 dependencies = [
@@ -9,14 +9,13 @@ dependencies = [
     "rich~=13.7.1",
     "click~=8.1.7",
     "readchar~=4.2.2",
-    # "boto3~=1.35.95",
-    "pandas~=2.2.3",
 
     # qs
     "thefuzz~=0.22.1",
 
     # gpr
     "PyGithub~=2.10.0",
+    "python-dateutil~=2.9.0",
 ]
 
 [project.optional-dependencies]
@@ -44,3 +43,8 @@ install_dir = "~/.setoolkit/bin"
 
 [build-system]
 requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["_env", "gcs", "gpr", "gst", "qs", "rt", "s3u2u"]
