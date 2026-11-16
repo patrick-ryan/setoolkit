@@ -72,7 +72,6 @@ def file_to_table(file_path: str, table_name: str, override_dtype: Optional[dict
             PROVIDER CREDENTIAL_CHAIN
         );
 
-        drop table if exists {table_name};
         """
     )
 
@@ -103,7 +102,7 @@ def file_to_table(file_path: str, table_name: str, override_dtype: Optional[dict
 
         df = custom_read_csv(buffer, override_dtype=override_dtype, encoding=encoding)
 
-        duckdb.sql(f"create table {table_name} as (SELECT * FROM df);")
+        duckdb.sql(f"create or replace table {table_name} as (SELECT * FROM df);")
     finally:
         if file:
             file.close()
@@ -121,7 +120,6 @@ def file_to_table_spark(file_path: str, table_name: str, override_dtype: Optiona
             PROVIDER CREDENTIAL_CHAIN
         );
 
-        drop table if exists {table_name};
         """
     )
 
@@ -149,7 +147,7 @@ def file_to_table_spark(file_path: str, table_name: str, override_dtype: Optiona
         header=True,
     ).toPandas()
 
-    duckdb.sql(f"create table {table_name} as (SELECT * FROM df);")
+    duckdb.sql(f"create or replace table {table_name} as (SELECT * FROM df);")
 
 
 def detect_csv_dialect(bucket, key) -> Tuple[chardet.ResultDict, csv.Dialect]:
@@ -266,7 +264,6 @@ def file_to_table_pa(file_path: str, table_name: str, override_dtype: Optional[d
             PROVIDER CREDENTIAL_CHAIN
         );
 
-        drop table if exists {table_name};
         """
     )
 
@@ -283,6 +280,5 @@ def file_to_table_pa(file_path: str, table_name: str, override_dtype: Optional[d
 
     df = read_pa_table(file_path, csv_encoding, csv_dialect, headers)
 
-    duckdb.sql(f"create table {table_name} as (SELECT * FROM df);")
-
+    duckdb.sql(f"create or replace table {table_name} as (SELECT * FROM df);")
 
