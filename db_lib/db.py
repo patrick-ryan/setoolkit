@@ -239,9 +239,6 @@ def file_to_table_pa(file_path: str, table_name: str, override_dtype: Optional[d
     print(f"Detected encoding {csv_encoding} & dialect {vars(csv_dialect)}")
     headers = get_csv_headers(data_bucket, data_key, csv_encoding, csv_dialect)
 
-    # csv_encoding = chardet.resultdict.ResultDict(encoding=encoding)
-    # csv_dialect = static_dialect()
-
     df = read_pa_table(file_path, csv_encoding, csv_dialect, headers)  # noqa: F841 - DuckDB replacement scan
 
     duckdb.sql(f"create or replace table {table_name} as (SELECT * FROM df);")
