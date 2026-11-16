@@ -12,6 +12,8 @@ The installation includes DuckDB, boto3, pandas, chardet, and PyArrow. pandas
 2.2 provides wheels for current Python versions and supports NumPy 2; pandas
 1.3 could fail to build on Python 3.11 or import with newer NumPy releases.
 The minimum Python version matches the pandas and PyArrow requirements.
+The boto3 constraint also permits a urllib3 version compatible with PyGithub,
+so the database and CLI packages can share an environment.
 
 For `file_to_table_spark`, install the optional Spark dependencies:
 
