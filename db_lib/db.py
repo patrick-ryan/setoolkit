@@ -286,3 +286,4 @@ def file_to_table_pa(file_path: str, table_name: str, override_dtype: Optional[d
 
     duckdb.sql(f"create table {table_name} as (SELECT * FROM df);")
 
+
