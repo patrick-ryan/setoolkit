@@ -1,5 +1,6 @@
 import dataclasses
 import datetime
+import dateutil
 import functools
 import itertools
 import os
@@ -52,7 +53,7 @@ def get_open_pulls(repos: list[Repository.Repository]):
 
 
 @functools.cache
-def get_comments(pull):
+def get_comments(pull: PullRequest.PullRequest):
     return list(itertools.chain(
         pull.get_review_comments(),
         pull.get_issue_comments(),
@@ -154,9 +155,29 @@ def print_table(table, rows: list[TableRow], selected=0):
     return table
 
 
+def print_some_test_data(user):
+    since = dateutil.parser.parse("2019-07-18")
+    print(user.login)
+
+    repo = user.get_repo("setoolkit")
+    print(repo)
+    for prc in repo.get_pulls_comments(since=since):
+        print(prc.body)
+
+    for pull in repo.get_pulls():
+        for comment in pull.get_issue_comments():
+            print(comment.body)
+
+    for repo in user.get_repos():
+        print(repo)
+        for prc in repo.get_pulls_comments(since=since):
+            print(prc)
+
+
 def main():
-    hostname = os.getenv("GITHUB_HOSTNAME")
-    access_token = os.getenv("GITHUB_ACCESS_TOKEN")
+    hostname = os.getenv("SETOOLKIT_GITHUB_HOSTNAME")
+    access_token = os.getenv("SETOOLKIT_GITHUB_ACCESS_TOKEN")
+    since_override = os.getenv("SETOOLKIT_GPR_SINCE")
 
     auth = Auth.Token(access_token)
 
@@ -164,28 +185,14 @@ def main():
     g = Github(auth=auth, base_url=base_url)
 
     user = g.get_user()
-    # print(user.login)
+    # print_some_test_data(user)
 
-    some_time_ago = datetime.datetime.now() - datetime.timedelta(weeks=4)
+    if since_override:
+        some_time_ago = dateutil.parser.parse(since_override)
+    else:
+        some_time_ago = datetime.datetime.now() - datetime.timedelta(weeks=4)
 
     repos = user.get_repos()
-
-    # repo = user.get_repo("setoolkit")
-    # repos = [repo]
-    # print(repo)
-    # for prc in repo.get_pulls_comments(since=some_time_ago):
-    #     print(prc.body)
-
-    # for pull in repo.get_pulls():
-    #     for comment in pull.get_issue_comments():
-    #         print(comment.body)
-
-    # for repo in user.get_repos():
-    #     print(repo)
-    #     for prc in repo.get_pulls_comments(since=dateutil.parser.parse("2019-07-18")):
-    #         print(prc)
-
-    selected = 0
     pulls = list(get_open_pulls(repos))
     items = list(
         set(get_unresolved_comments_with_mentions(pulls, f"@{user.login}", since=some_time_ago))
@@ -196,6 +203,7 @@ def main():
         print("No results")
         return
 
+    selected = 0
     try:
         with Live(print_table(make_table(), items, selected), auto_refresh=False) as live:
             while True:
