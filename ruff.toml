@@ -1,0 +1,12 @@
+target-version = "py39"
+line-length = 100
+extend-exclude = ["build", "bin", "*.egg-info", "evals/results"]
+
+[lint]
+# Start with correctness checks that can be enabled across the existing codebase.
+# Formatting/import cleanup can expand the gate without obscuring bug-fix diffs.
+select = ["E9", "F63", "F7", "F82"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
