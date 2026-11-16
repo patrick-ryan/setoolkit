@@ -4,10 +4,8 @@ import click
 from thefuzz import process
 
 from rich.live import Live
-from rich.prompt import Prompt, Confirm
 from rich.style import Style
 from rich.table import Table
-from rich.syntax import Syntax
 
 from readchar import readkey, key
 
@@ -35,15 +33,21 @@ def print_table(table, rows, selected=0):
 
 @click.command()
 @click.argument("text")
-def main(text: str):
+@click.option("--output", type=click.Path(path_type=pathlib.Path), required=True)
+def main(text: str, output: pathlib.Path):
     """
     Quick search for projects, by project name
     """
 
-    cd = get_project_from_path(pathlib.Path(".").resolve())
-    paths = cd.glob("**/autoci.json")
+    try:
+        cd = get_project_from_path(pathlib.Path.cwd())
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+    paths = sorted(str(path) for path in cd.glob("**/autoci.json"))
 
     results = [str(r) for r, _ in process.extract(text, paths, limit=5)]
+    if not results:
+        raise click.ClickException("No projects with autoci.json were found.")
 
     try:
         selected = 0
@@ -55,12 +59,12 @@ def main(text: str):
                     case key.DOWN  | "j":
                         selected = min(len(results) - 1, selected + 1)
                     case key.ENTER:
-                        pathlib.Path("/tmp/qs").write_text(str(pathlib.Path(results[selected]).parent))
+                        output.write_text(str(pathlib.Path(results[selected]).parent))
                         break
 
                 live.update(print_table(make_table(), results, selected), refresh=True)
     except KeyboardInterrupt:
-        pass
+        raise click.Abort() from None
 
 
 if __name__ == "__main__":
