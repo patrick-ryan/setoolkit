@@ -6,6 +6,7 @@ import re
 import tempfile
 import gzip
 import csv
+import functools
 
 import duckdb
 import boto3
@@ -16,14 +17,16 @@ import pyarrow.csv as pc
 import pyarrow.dataset as ds
 
 
-s3_client = boto3.client('s3')
+@functools.lru_cache(maxsize=1)
+def get_s3_client():
+    """Resolve AWS credentials only when an S3 operation is requested."""
+    return boto3.client('s3')
 
 
 def download_first_file(s3_uri):
     s3_path = s3_uri.split("s3://")[1]
     bucket, s3_key = s3_path.split("/", maxsplit=1)
-    file = tempfile.NamedTemporaryFile()
-
+    s3_client = get_s3_client()
     response = s3_client.list_objects_v2(Bucket=bucket, Prefix=s3_key)
 
     if 'Contents' not in response:
@@ -33,7 +36,12 @@ def download_first_file(s3_uri):
     first_file_key = response['Contents'][0]['Key']
     print(f"Downloading {first_file_key}...")
 
-    s3_client.download_fileobj(bucket, first_file_key, file)
+    file = tempfile.NamedTemporaryFile()
+    try:
+        s3_client.download_fileobj(bucket, first_file_key, file)
+    except Exception:
+        file.close()
+        raise
     print(f"File downloaded to {file.name}")
 
     file.seek(0)
@@ -63,18 +71,6 @@ def custom_read_csv(file: io.BytesIO, override_dtype: Optional[dict] = None, enc
 
 
 def file_to_table(file_path: str, table_name: str, override_dtype: Optional[dict] = None, encoding: Optional[str] = None):
-    duckdb.sql(
-        f"""
-        INSTALL httpfs;
-        LOAD httpfs;
-        CREATE SECRET IF NOT EXISTS (
-            TYPE S3,
-            PROVIDER CREDENTIAL_CHAIN
-        );
-
-        """
-    )
-
     buffer = io.BytesIO()
 
     path = pathlib.Path(file_path)
@@ -100,7 +96,7 @@ def file_to_table(file_path: str, table_name: str, override_dtype: Optional[dict
 
         buffer.seek(0)
 
-        df = custom_read_csv(buffer, override_dtype=override_dtype, encoding=encoding)
+        df = custom_read_csv(buffer, override_dtype=override_dtype, encoding=encoding)  # noqa: F841 - DuckDB replacement scan
 
         duckdb.sql(f"create or replace table {table_name} as (SELECT * FROM df);")
     finally:
@@ -110,18 +106,6 @@ def file_to_table(file_path: str, table_name: str, override_dtype: Optional[dict
 
 def file_to_table_spark(file_path: str, table_name: str, override_dtype: Optional[dict] = None, encoding: Optional[str] = None):
     from pyspark.sql import SparkSession
-    
-    duckdb.sql(
-        f"""
-        INSTALL httpfs;
-        LOAD httpfs;
-        CREATE SECRET IF NOT EXISTS (
-            TYPE S3,
-            PROVIDER CREDENTIAL_CHAIN
-        );
-
-        """
-    )
 
     aws_access_key_id = os.environ['AWS_ACCESS_KEY_ID']
     aws_secret_access_key = os.environ['AWS_SECRET_ACCESS_KEY']
@@ -141,7 +125,7 @@ def file_to_table_spark(file_path: str, table_name: str, override_dtype: Optiona
 
     print(session.conf.get("spark.driver.memory"))
 
-    df = session.read.csv(
+    df = session.read.csv(  # noqa: F841 - DuckDB replacement scan
         file_path,
         sep="|",
         header=True,
@@ -154,10 +138,9 @@ def detect_csv_dialect(bucket, key) -> Tuple[chardet.ResultDict, csv.Dialect]:
     """
     Detect CSV dialect (delimiter, escape-char, etc) from S3 file
     """
-    response = s3_client.get_object(Bucket=bucket, Key=key)
-    sample_data = response["Body"].read(
-        8192
-    )  # Read only a small sample, enough to cover more than 1 line
+    response = get_s3_client().get_object(Bucket=bucket, Key=key)
+    with response["Body"] as body:
+        sample_data = body.read(8192)
 
     csv_encoding = chardet.detect(sample_data)
 
@@ -173,16 +156,9 @@ def get_csv_headers(
     """
     Get CSV headers from S3
     """
-    response = s3_client.get_object(Bucket=bucket, Key=key)
-    csv_data = response["Body"]
-
-    cr = csv.reader(
-        io.TextIOWrapper(csv_data, encoding=csv_encoding["encoding"]),
-        dialect=csv_dialect,
-    )
-    header = next(cr)
-
-    return header
+    response = get_s3_client().get_object(Bucket=bucket, Key=key)
+    with io.TextIOWrapper(response["Body"], encoding=csv_encoding["encoding"]) as csv_data:
+        return next(csv.reader(csv_data, dialect=csv_dialect))
 
 
 def removeprefix(line: str, prefix: str):
@@ -226,7 +202,7 @@ def read_pa_table(
 
     # Scan each fragment and tag with its source file path
     tables = []
-    for fragment in dataset.get_fragments():
+    for fragment in sorted(dataset.get_fragments(), key=lambda fragment: fragment.path):
         file_path = fragment.path
         table = fragment.to_table()
         # Add source_file column with the file path repeated for each row
@@ -255,18 +231,6 @@ def static_dialect():
 
 
 def file_to_table_pa(file_path: str, table_name: str, override_dtype: Optional[dict] = None, encoding: Optional[str] = None):
-    duckdb.sql(
-        f"""
-        INSTALL httpfs;
-        LOAD httpfs;
-        CREATE SECRET IF NOT EXISTS (
-            TYPE S3,
-            PROVIDER CREDENTIAL_CHAIN
-        );
-
-        """
-    )
-
     data_bucket, data_key = parse_s3_uri(file_path)
 
     print(f"Sniffing CSV metadata for s3://{data_bucket}/{data_key}")
@@ -278,7 +242,6 @@ def file_to_table_pa(file_path: str, table_name: str, override_dtype: Optional[d
     # csv_encoding = chardet.resultdict.ResultDict(encoding=encoding)
     # csv_dialect = static_dialect()
 
-    df = read_pa_table(file_path, csv_encoding, csv_dialect, headers)
+    df = read_pa_table(file_path, csv_encoding, csv_dialect, headers)  # noqa: F841 - DuckDB replacement scan
 
     duckdb.sql(f"create or replace table {table_name} as (SELECT * FROM df);")
-
