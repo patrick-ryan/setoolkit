@@ -55,8 +55,9 @@ def custom_split(line):
 
 
 def custom_read_csv(file: io.BytesIO, override_dtype: Optional[dict] = None, encoding: Optional[str] = None):
+    """Read pipe-delimited bytes, using UTF-8 unless an encoding is supplied."""
     # Read file line by line
-    lines = file.read().decode(encoding=encoding).split("\n")
+    lines = file.read().decode(encoding=encoding or "utf-8").split("\n")
 
     # Process the lines
     data = [custom_split(line) for line in lines if line.strip()]
@@ -90,7 +91,7 @@ def file_to_table(file_path: str, table_name: str, override_dtype: Optional[dict
 
         if file_type == "gz":
             with gzip.open(new_path, "rb") as f:
-                buffer.write(f.read().decode(encoding="ISO-8859-1").encode())
+                buffer.write(f.read())
         else:
             buffer.write(new_path.read_bytes())
 
