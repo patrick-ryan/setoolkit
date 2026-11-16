@@ -1,7 +1,7 @@
 [project]
-name = "tools"
+name = "setoolkit-db"
 version = "0.1"
-description = "Tools"
+description = "Database import helpers for SE Toolkit"
 
 requires-python = ">= 3.9"
 dependencies = [
@@ -23,3 +23,6 @@ build = [
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["db"]

@@ -187,14 +187,8 @@ def get_csv_headers(
     return header
 
 
-def removeprefix(line: str, prefix: str):
-    if line.startswith(prefix):
-        return line[len(prefix):]
-    return line
-
-
 def parse_s3_uri(s3_uri: str):
-    no_prefix = removeprefix(removeprefix(s3_uri, "s3://"), "s3a://")
+    no_prefix = s3_uri.removeprefix("s3://").removeprefix("s3a://")
     bucket, key = no_prefix.split("/", 1)
     return bucket, key
 
@@ -240,22 +234,6 @@ def read_pa_table(
     return full_table
 
 
-def static_dialect():
-
-    class dialect(csv.Dialect):
-        _name = "sniffed"
-        lineterminator = '\r\n'
-        quoting = 0
-        # escapechar = ''
-
-    dialect.doublequote = True
-    dialect.delimiter = "|"
-    dialect.quotechar = '"'
-    dialect.skipinitialspace = False
-
-    return dialect
-
-
 def file_to_table_pa(file_path: str, table_name: str, override_dtype: Optional[dict] = None, encoding: Optional[str] = None):
     duckdb.sql(
         f"""
@@ -277,9 +255,6 @@ def file_to_table_pa(file_path: str, table_name: str, override_dtype: Optional[d
 
     print(f"Detected encoding {csv_encoding} & dialect {vars(csv_dialect)}")
     headers = get_csv_headers(data_bucket, data_key, csv_encoding, csv_dialect)
-
-    # csv_encoding = chardet.resultdict.ResultDict(encoding=encoding)
-    # csv_dialect = static_dialect()
 
     df = read_pa_table(file_path, csv_encoding, csv_dialect, headers)
 
