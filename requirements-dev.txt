@@ -1,0 +1,16 @@
+# Shared test environment for both independently installable packages.
+# Keep runtime constraints aligned with the package pyproject.toml files.
+GitPython~=3.1.43
+rich~=13.7.1
+click~=8.1.7
+readchar~=4.2.2
+thefuzz~=0.22.1
+PyGithub~=2.10.0
+python-dateutil~=2.9.0
+duckdb~=1.1.3
+boto3~=1.35.95
+pandas~=2.2.3
+chardet~=5.2.0
+pyarrow~=18.1.0
+ruff==0.11.13
+PyYAML~=6.0.2
