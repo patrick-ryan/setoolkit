@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: headless-stashes
+expected_outcome: |
+  Provide quoted, non-interactive stash inspection and project discovery. Preserve
+  stash and working-tree state, and distinguish an agent working directory from
+  changing the user's parent shell.
