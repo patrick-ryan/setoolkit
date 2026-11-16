@@ -1,15 +1,18 @@
 import dataclasses
 import datetime
-import dateutil
 import functools
 import itertools
 import os
+import re
 from typing import Literal
 import webbrowser
 
+import click
+from dateutil import parser
 from github import Github, Auth, Consts, Repository, PullRequest
 from readchar import readkey, key
 from rich.live import Live
+from rich.markup import escape
 from rich.style import Style
 from rich.table import Table
 
@@ -19,21 +22,20 @@ SELECTED = Style(color="blue", bgcolor="white", bold=True)
 
 @dataclasses.dataclass
 class TableRow():
-    repo_id: str
-    pr_id: str
+    repo_id: int
+    pr_id: int
     url: str
     pr: str
     repo: str
     date: str
-    state: Literal["UNRESOLVED", "UNRESPONDED", "MINE"]
-    comment: str
+    state: Literal["MENTIONED", "UNRESPONDED", "MINE"]
+    comment: str | None
     row: list[str]
 
     def __eq__(self, other):
-        return other and self.repo_id == other.repo_id and self.pr_id == other.pr_id
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
+        if not isinstance(other, TableRow):
+            return NotImplemented
+        return self.repo_id == other.repo_id and self.pr_id == other.pr_id
 
     def __hash__(self):
         return hash((self.repo_id, self.pr_id))
@@ -60,22 +62,33 @@ def get_comments(pull: PullRequest.PullRequest):
     ))
 
 
-def get_unresolved_comments_with_mentions(pulls: list[tuple[Repository.Repository, PullRequest.PullRequest]], mention_keyword, since=None) -> list[TableRow]:
+def is_recent(created_at, since):
+    if since is None:
+        return True
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=datetime.timezone.utc)
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=datetime.timezone.utc)
+    return created_at >= since
+
+
+def get_comments_with_mentions(pulls: list[tuple[Repository.Repository, PullRequest.PullRequest]], mention_keyword, since=None) -> list[TableRow]:
     result = []
+    mention = re.compile(r"(?<![\w-])" + re.escape(mention_keyword) + r"(?![\w-])")
     for repo, pull in pulls:
         for comment in get_comments(pull):
-            # there doesn't seem to be any way to filter out resolved comments
-            if mention_keyword in comment.body:
+            # REST comments do not expose thread resolution status.
+            if is_recent(comment.created_at, since) and mention.search(comment.body or ""):
                 result.append(
                     TableRow.from_dict({
                         "repo_id": repo.id,
                         "pr_id": pull.id,
                         "url": comment.html_url,
-                        "pr": f"[link={pull.html_url}]{pull.title}[/link]",
-                        "repo": f"[link={repo.url}]{repo.name}[/link]",
+                        "pr": f"[link={pull.html_url}]{escape(pull.title)}[/link]",
+                        "repo": f"[link={repo.html_url}]{escape(repo.name)}[/link]",
                         "date": str(comment.created_at.date()),
-                        "state": "UNRESOLVED",
-                        "comment": f"[link={comment.html_url}]{comment.body[:50]}[/link]",
+                        "state": "MENTIONED",
+                        "comment": f"[link={comment.html_url}]{escape(comment.body[:50])}[/link]",
                         "row": ["pr", "repo", "date", "state", "comment"]
                     })
                 )
@@ -87,10 +100,20 @@ def get_open_pulls_missing_response(pulls: list[tuple[Repository.Repository, Pul
     result = []
 
     for repo, pull in pulls:
+        if not is_recent(pull.created_at, since) or pull.user.id == user_id:
+            continue
         responded = False
         for comment in get_comments(pull):
-            if comment.user.id == user_id:
+            if comment.user is not None and comment.user.id == user_id:
                 responded = True
+
+        if not responded:
+            responded = any(
+                review.user is not None
+                and review.user.id == user_id
+                and review.state != "PENDING"
+                for review in pull.get_reviews()
+            )
 
         if not responded:
             result.append(
@@ -98,8 +121,8 @@ def get_open_pulls_missing_response(pulls: list[tuple[Repository.Repository, Pul
                     "repo_id": repo.id,
                     "pr_id": pull.id,
                     "url": pull.html_url,
-                    "pr": f"[link={pull.html_url}]{pull.title}[/link]",
-                    "repo": f"[link={repo.url}]{repo.name}[/link]",
+                    "pr": f"[link={pull.html_url}]{escape(pull.title)}[/link]",
+                    "repo": f"[link={repo.html_url}]{escape(repo.name)}[/link]",
                     "date": str(pull.created_at.date()),
                     "state": "UNRESPONDED",
                     "comment": None,
@@ -120,8 +143,8 @@ def get_my_open_pulls(pulls: list[tuple[Repository.Repository, PullRequest.PullR
                     "repo_id": repo.id,
                     "pr_id": pull.id,
                     "url": pull.html_url,
-                    "pr": f"[link={pull.html_url}]{pull.title}[/link]",
-                    "repo": f"[link={repo.url}]{repo.name}[/link]",
+                    "pr": f"[link={pull.html_url}]{escape(pull.title)}[/link]",
+                    "repo": f"[link={repo.html_url}]{escape(repo.name)}[/link]",
                     "date": str(pull.created_at.date()),
                     "state": "MINE",
                     "comment": None,
@@ -155,56 +178,47 @@ def print_table(table, rows: list[TableRow], selected=0):
     return table
 
 
-def print_some_test_data(user):
-    since = dateutil.parser.parse("2019-07-18")
-    print(user.login)
-
-    repo = user.get_repo("setoolkit")
-    print(repo)
-    for prc in repo.get_pulls_comments(since=since):
-        print(prc.body)
-
-    for pull in repo.get_pulls():
-        for comment in pull.get_issue_comments():
-            print(comment.body)
-
-    for repo in user.get_repos():
-        print(repo)
-        for prc in repo.get_pulls_comments(since=since):
-            print(prc)
+def prioritize_rows(*groups):
+    rows = {}
+    for group in groups:
+        for row in sorted(group, key=lambda row: (row.date, row.repo_id, row.pr_id, row.url), reverse=True):
+            rows.setdefault((row.repo_id, row.pr_id), row)
+    return list(rows.values())
 
 
+@click.command()
 def main():
     hostname = os.getenv("SETOOLKIT_GITHUB_HOSTNAME")
     access_token = os.getenv("SETOOLKIT_GITHUB_ACCESS_TOKEN")
     since_override = os.getenv("SETOOLKIT_GPR_SINCE")
 
+    if not access_token:
+        raise click.ClickException("Set SETOOLKIT_GITHUB_ACCESS_TOKEN to a GitHub access token.")
     auth = Auth.Token(access_token)
-
-    base_url = f"https://{hostname}/api/v3" if hostname else Consts.DEFAULT_BASE_URL
-    g = Github(auth=auth, base_url=base_url)
-
-    user = g.get_user()
-    # print_some_test_data(user)
+    base_url = f"https://{hostname}/api/v3" if hostname and hostname != "github.com" else Consts.DEFAULT_BASE_URL
 
     if since_override:
-        some_time_ago = dateutil.parser.parse(since_override)
+        try:
+            some_time_ago = parser.parse(since_override)
+        except (ValueError, OverflowError) as error:
+            raise click.ClickException("SETOOLKIT_GPR_SINCE must be a valid date.") from error
     else:
-        some_time_ago = datetime.datetime.now() - datetime.timedelta(weeks=4)
+        some_time_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(weeks=4)
 
-    repos = user.get_repos()
-    pulls = list(get_open_pulls(repos))
-    items = list(
-        set(get_unresolved_comments_with_mentions(pulls, f"@{user.login}", since=some_time_ago))
-        | set(get_my_open_pulls(pulls, user.id))
-        | set(get_open_pulls_missing_response(pulls, user.id, since=some_time_ago))
-    )
-    if not items:
-        print("No results")
-        return
-
-    selected = 0
+    g = Github(auth=auth, base_url=base_url)
     try:
+        user = g.get_user()
+        pulls = list(get_open_pulls(user.get_repos()))
+        items = prioritize_rows(
+            get_comments_with_mentions(pulls, f"@{user.login}", since=some_time_ago),
+            get_my_open_pulls(pulls, user.id),
+            get_open_pulls_missing_response(pulls, user.id, since=some_time_ago),
+        )
+        if not items:
+            print("No results")
+            return
+
+        selected = 0
         with Live(print_table(make_table(), items, selected), auto_refresh=False) as live:
             while True:
                 selected_data = items[selected]

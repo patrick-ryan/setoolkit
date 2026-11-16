@@ -46,14 +46,23 @@ Update your RC file or whatever with the init invocation and path update, and yo
 Manage git worktrees.
 
 ```
-,gcs
+,gcs --branch-name <existing-branch>
 ```
 
 ## GPR
 
 List out pull requests needing attention.
 
-Priority list of pull requests with unresolved comments with user mentions, open pull requests the user has opened, and open pull requests the user has not responded to.
+Shows pull requests in priority order: recent comments mentioning you, your open
+pull requests, then recent pull requests you have not responded to. Comments and
+submitted reviews both count as responses. Within each category, newest entries
+appear first; each pull request appears only once in its highest-priority category.
+
+`SETOOLKIT_GPR_SINCE` filters mention creation dates and unresponded pull request
+creation dates. It defaults to four weeks ago; your own open pull requests are
+included regardless of age. Use an ISO date such as `2026-10-01` for an override.
+Mentioned comments may belong to resolved threads: the REST comment API does not
+expose resolution status, so the category is labeled `MENTIONED`.
 
 Runs a bit slowly right now, sorry.
 
@@ -64,6 +73,10 @@ Runs a bit slowly right now, sorry.
 ## GST
 
 Manage your local git stashes.
+
+Use Enter to inspect, `r` to rename, and `a` to pop the selected stash. Renaming
+preserves its contents and moves it to the top of the stash list without changing
+your working files. An empty stash list exits cleanly.
 
 ```
 ,gst
@@ -76,6 +89,10 @@ List other project directories using fuzzy search logic, and switch your current
 ```
 ,qs <search_text>
 ```
+
+Quote searches containing spaces. Canceling leaves your current directory
+unchanged. The shell wrapper uses a private, per-invocation result file and removes
+it on completion; source `tools_cli/init.sh` again after updating the binaries.
 
 ## RT
 

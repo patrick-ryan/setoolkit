@@ -2,7 +2,9 @@ import pathlib
 
 from typing import Callable
 
-from _env import REPOS_PATH
+import click
+
+from _env import get_repos_path
 
 
 def find_parent(path: pathlib.Path, cond: Callable[[pathlib.Path], bool]) -> pathlib.Path:
@@ -21,17 +23,22 @@ def find_parent_with_parent(path: pathlib.Path, parent: pathlib.Path) -> pathlib
     )
 
 
-def get_project_from_path(path: pathlib.Path) -> str:
-    if REPOS_PATH in path.parents:
-        project_dir = find_parent_with_parent(path, REPOS_PATH)
+def get_project_from_path(path: pathlib.Path) -> pathlib.Path:
+    repos_path = get_repos_path()
+    if repos_path in path.parents:
+        project_dir = find_parent_with_parent(path, repos_path)
         return project_dir
     else:
-        raise Exception("not in projects path")
+        raise ValueError(f"Not inside a project under {repos_path}")
 
 
+@click.command()
 def main():
     current_dir = pathlib.Path(".").resolve()
-    print(str(get_project_from_path(current_dir)))
+    try:
+        print(str(get_project_from_path(current_dir)))
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
 
 
 if __name__ == "__main__":

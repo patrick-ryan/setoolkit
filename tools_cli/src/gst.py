@@ -1,6 +1,7 @@
 import json
 import pathlib
 
+import click
 from git import Repo, exc
 
 from rich.live import Live
@@ -11,7 +12,7 @@ from rich.syntax import Syntax
 
 from readchar import readkey, key
 
-from _env import REPOS_PATH
+from _env import get_repos_path
 from rt import get_project_from_path
 
 
@@ -52,15 +53,35 @@ def print_diff(stash_data):
 
 
 def save_stash_name(repo: Repo, commit: str, name: str):
-    repo.git.stash("store", "-m", name, commit)
-    repo.git.stash()
+    entries = repo.git.stash("list", "--format=%H%x00%gs").splitlines()
+    for index, entry in enumerate(entries):
+        sha, message = entry.split("\0", 1)
+        if sha == commit:
+            break
+    else:
+        raise click.ClickException("The selected stash no longer exists.")
+    if message == name:
+        return
+
+    # Store a new commit with identical contents before removing the old entry.
+    # A distinct commit also allows renaming the top stash without reflog deduplication.
+    original = repo.commit(commit)
+    parents = [arg for parent in original.parents for arg in ("-p", parent.hexsha)]
+    renamed = repo.git.commit_tree(original.tree.hexsha, *parents, "-m", name)
+    repo.git.stash("store", "-m", name, renamed)
+    updated = repo.git.stash("list", "--format=%H").splitlines()
+    if len(updated) != len(entries) + 1 or updated[0] != renamed or updated[index + 1] != commit:
+        raise click.ClickException("Could not store the renamed stash; the original was retained.")
+    repo.git.stash("drop", f"stash@{{{index + 1}}}")
 
 
-def apply_stash(repo: Repo, stash_index: str):
+def apply_stash(repo: Repo, stash_index: int, expected_commit: str | None = None):
+    if expected_commit is not None and repo.commit(f"stash@{{{stash_index}}}").hexsha != expected_commit:
+        raise click.ClickException("The stash list changed; refresh before applying the selected stash.")
     repo.git.stash("pop", f"stash@{{{stash_index}}}")
 
 
-def get_stashes(repo_paths: list[str]):
+def get_stashes(repo_paths: list[pathlib.Path]):
     stashes = {}
     for repo_path in repo_paths:
         if is_git_repo(repo_path):
@@ -87,24 +108,28 @@ def get_stashes(repo_paths: list[str]):
     return [s for _, rstashes in stashes.items() for s in rstashes.values()]
 
 
+@click.command()
 def main():
     current_path = pathlib.Path(".").resolve()
     try:
         current_repo_path = get_project_from_path(current_path)
-    except:
+    except ValueError:
         current_repo_path = None
 
     if current_repo_path:
         repo_paths = [current_repo_path]
     else:
-        repo_paths = list(REPOS_PATH.iterdir())
+        repo_paths = list(get_repos_path().iterdir())
 
     selected = 0
     items = get_stashes(repo_paths)
+    if not items:
+        print("No stashes")
+        return
 
     try:
         with Live(print_table(make_table(), items, selected), auto_refresh=False) as live:
-            while True:
+            while items:
                 stash_data = items[selected]
                 match readkey():
                     case key.UP | "k":
@@ -132,19 +157,23 @@ def main():
                         live.console.clear()
 
                         name = Prompt.ask("Stash name:", default=stash_data["message"], console=live.console)
-                        save_stash_name()
+                        save_stash_name(stash_data["repo"], stash_data["commit"], name)
+                        items = get_stashes(repo_paths)
 
                         live.start()
                     case "a":
                         confirmed = Confirm.ask("apply stash?", default=False, console=live.console)
                         if confirmed:
-                            apply_stash(stash_data["repo"], stash_data["stash_index"])
+                            apply_stash(stash_data["repo"], stash_data["stash_index"], stash_data["commit"])
 
                         items = get_stashes(repo_paths)
 
+                selected = min(selected, max(0, len(items) - 1))
                 live.update(print_table(make_table(), items, selected), refresh=True)
     except KeyboardInterrupt:
         pass
+    except exc.GitCommandError as error:
+        raise click.ClickException(str(error)) from error
 
 
 if __name__ == "__main__":
